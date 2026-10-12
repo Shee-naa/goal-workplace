@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>练吧 · 本地自学工作台</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">练</div>
+        <div class="brand-text">
+          <strong>练吧</strong>
+          <span>自学工作台</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="mini-stat" id="sideStat"></div>
+        <div class="side-links">
+          <a href="#/settings">⚙️ 设置</a>
+          <a href="/logout" id="logoutLink" class="hidden">🚪 退出</a>
+          <span id="conn" class="conn">连接中…</span>
+        </div>
+      </div>
+    </aside>
+    <main class="main" id="main">
+      <div class="loading">正在加载…</div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="modal" class="modal-backdrop hidden">
+    <div class="modal" id="modalBox"></div>
+  </div>
+
+  <script src="/data/curriculum.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "lianba",
+  "version": "1.0.0",
+  "private": true,
+  "description": "练吧 —— 本地自学工作台（信息系统高项 / AIIA / 健康猿）",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
