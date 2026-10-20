@@ -1215,46 +1215,40 @@ function buildWeekPlan(cfg) {
   return { goal: cfg.goal || '减脂塑形', minutes: cfg.minutes || 40, daysPerWeek: keys.length, startDate: cfg.startDate || todayISO(), week, builtAt: Date.now() };
 }
 
-/* ---------- 餐饮推荐（中餐 · 外食友好 · 早餐快手） ---------- */
+/* ---------- 餐饮推荐（只做早 / 晚 · 减脂 + 消炎 · 备菜连续、品类精简） ---------- */
 const MEALS = {
   breakfast: [
-    '无糖豆浆 + 水煮蛋 2 个 + 玉米半根',
-    '牛奶 250ml + 全麦面包 2 片 + 鸡蛋 1 个',
-    '燕麦 40g 冲泡 + 香蕉 1 根 + 无糖酸奶',
-    '菜肉包 1 个 + 无糖豆浆 + 鸡蛋 1 个',
-    '杂粮粥 1 碗 + 卤蛋 1 个 + 小把坚果',
-    '隔夜燕麦杯（前一晚泡好，早上直接吃）',
-  ],
-  lunch: [
-    '一荤一素 + 米饭减半 + 先喝汤',
-    '鸡胸 / 牛肉 + 两份青菜 + 杂粮饭',
-    '清汤粉面 + 卤蛋 / 瘦肉 + 一份青菜',
-    '食堂：菜过水、主食减半、多打绿叶菜',
-    '轻食沙拉（酱料另放）+ 杂粮主食',
+    { t: '无糖酸奶 + 燕麦 40g + 蓝莓 + 水煮蛋 1 个', tag: '5 分钟' },
+    { t: '全麦面包 2 片 + 煎蛋 1 个 + 番茄 + 牛奶', tag: '8 分钟' },
+    { t: '杂粮粥 + 卤蛋 1 个 + 凉拌菠菜', tag: '10 分钟' },
+    { t: '玉米半根 + 水煮蛋 2 个 + 无糖豆浆', tag: '8 分钟' },
+    { t: '隔夜燕麦杯（前一晚泡好）+ 香蕉 + 坚果', tag: '0 分钟' },
   ],
   dinner: [
-    '清蒸鱼 + 焯青菜 + 小半碗米饭',
-    '番茄炒蛋 + 蒜蓉西兰花 + 半个红薯',
-    '白灼虾 + 凉拌黄瓜 + 杂粮饭小碗',
-    '豆腐菌菇汤 + 清炒时蔬 + 少量粗粮',
-    '去皮鸡腿 + 西兰花 + 玉米 / 紫薯',
-  ],
-  snack: [
-    '无糖酸奶 + 蓝莓',
-    '苹果 / 橙子 1 个',
-    '水煮蛋 + 无糖豆浆',
-    '原味坚果一小把（约 20g）',
-    '黄瓜 / 小番茄',
+    { t: '清蒸鲈鱼 + 西兰花 + 杂粮饭', tag: '消炎' },
+    { t: '番茄豆腐 + 蒜蓉菠菜 + 红薯', tag: '消炎' },
+    { t: '白灼虾 + 凉拌黄瓜 + 玉米', tag: '高蛋白' },
+    { t: '去皮鸡腿 + 彩椒西兰花 + 杂粮饭', tag: '减脂' },
+    { t: '菌菇豆腐汤 + 清炒时蔬 + 紫薯', tag: '清淡' },
   ],
 };
+const MEAL_STAPLES = ['鸡蛋', '无糖酸奶 / 牛奶', '燕麦', '全麦面包', '玉米 / 红薯 / 紫薯', '杂粮饭', '鸡胸 / 鸡腿', '鲈鱼 / 虾', '豆腐', '西兰花 / 菠菜 / 彩椒', '番茄 / 黄瓜', '蓝莓 / 香蕉', '坚果', '橄榄油 / 姜蒜'];
 const MEAL_TIPS = [
-  '先吃蛋白和蔬菜，最后吃主食',
-  '主食减半，优先粗粮（玉米/红薯/杂粮饭）',
-  '少油炸糖醋红烧，多蒸煮炖拌',
-  '每餐一掌心蛋白（蛋/鸡胸/鱼虾/豆腐）',
-  '饮料换无糖茶，白水 1.5–2L',
+  '每餐一掌心蛋白：蛋 / 鱼虾 / 鸡胸 / 豆腐',
+  '主食一拳头，选粗粮（燕麦 / 玉米 / 红薯 / 杂粮饭）',
+  '蔬菜占半盘，深色为主（西兰花 / 菠菜 / 彩椒）',
+  '消炎加分：深海鱼、蓝莓、坚果、姜蒜、番茄',
+  '用橄榄油低温炒或凉拌，少油炸、少糖',
+  '少加工：戒含糖饮料、糕点、腌制品',
 ];
-const EAT_OUT = '外食口诀：一荤一素、汤先喝、饭减半、菜过水；避开糖醋/红烧/油炸/勾芡；火锅选清汤锅、多涮肉和菜、蘸料少油。';
+const PREP_TIPS = [
+  '周末 30 分钟：煮 6-8 个水煮蛋（冷藏可放 5 天）',
+  '蒸一锅杂粮饭 + 红薯 / 紫薯，分装冷冻，吃前微波 2 分钟',
+  '西兰花、彩椒切好装盒；菠菜焯水后沥干',
+  '鸡胸 / 鸡腿分装，用黑胡椒 + 蒜 + 少许橄榄油腌好冷冻',
+  '黄瓜、番茄洗净即食；蓝莓冷冻保存',
+  '常备：无糖酸奶、燕麦、坚果、橄榄油',
+];
 
 /* ---------- 训练须知（居家 · 低冲击 · 减脂塑形） ---------- */
 const TRAIN_TIPS = [
@@ -1317,20 +1311,15 @@ function renderGuides() {
 
 function mealOf(date, shift) {
   const seed = [...date].reduce((s, c) => s + c.charCodeAt(0), 0) + (shift || 0);
-  const pick = (arr, k) => arr[(seed * (k + 3)) % arr.length];
-  return { breakfast: pick(MEALS.breakfast, 1), lunch: pick(MEALS.lunch, 2), dinner: pick(MEALS.dinner, 3), snack: pick(MEALS.snack, 4) };
+  const pick = (arr, k) => arr[((seed * (k + 3)) % arr.length + arr.length) % arr.length];
+  return { breakfast: pick(MEALS.breakfast, 1), dinner: pick(MEALS.dinner, 2) };
 }
 function renderMeals() {
   const m = mealOf(todayISO(), state.ws3._meal || 0);
-  const rows = [
-    ['🌅 早餐', '快手', m.breakfast],
-    ['🍱 午餐', '外食', m.lunch],
-    ['🌙 晚餐', '清淡', m.dinner],
-    ['🍎 加餐', '按需', m.snack],
-  ];
-  return `${rows.map(([t, tag, v]) => `<div class="meal-row">
-      <span class="meal-t">${t}<span class="badge" style="margin-left:6px">${tag}</span></span>
-      <span class="tiny">${h(v)}</span>
+  const rows = [['🌅 早餐', m.breakfast], ['🌙 晚餐', m.dinner]];
+  return `${rows.map(([t, v]) => `<div class="meal-row">
+      <span class="meal-t">${t}<span class="badge" style="margin-left:6px">${h(v.tag)}</span></span>
+      <span class="tiny">${h(v.t)}</span>
     </div>`).join('')}`;
 }
 function ws3Cfg() { return state.ws3.config || {}; }
@@ -1537,9 +1526,13 @@ function viewWS3() {
         </div>
         ${renderMeals()}
         <details class="mini-det">
-          <summary>饮食原则 & 外食口诀</summary>
+          <summary>饮食原则（减脂 + 消炎）</summary>
           <div class="row" style="margin-top:8px">${MEAL_TIPS.map((x) => `<span class="badge">${h(x)}</span>`).join('')}</div>
-          <div class="tiny muted" style="margin-top:8px">${h(EAT_OUT)}</div>
+        </details>
+        <details class="mini-det">
+          <summary>周末备菜清单（30 分钟，吃一周）</summary>
+          <div class="stack" style="margin-top:8px">${PREP_TIPS.map((x) => `<div class="tiny">· ${h(x)}</div>`).join('')}</div>
+          <div class="tiny muted" style="margin-top:8px">常备主料：${MEAL_STAPLES.map((x) => `<span class="badge">${h(x)}</span>`).join('')}</div>
         </details>
       </section>
 
