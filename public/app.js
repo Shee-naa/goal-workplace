@@ -76,7 +76,7 @@ function defaultState() {
     profile: { name: '', dailyMinutes: 120 },
     ws1: { config: {}, plan: [], tasksDone: {}, checkins: {} },
     ws2: { sources: [], saved: [], read: {}, cards: [], notes: {} },
-    ws3: { config: { goal: '减脂塑形', daysPerWeek: 3, minutes: 40, weekdays: [1, 3, 5] }, plan: null, checkins: {}, lightDays: {}, records: {} },
+    ws3: { config: { goal: '减脂塑形', sessionsPerWeek: 3, minutes: 40 }, plan: null, checkins: {}, records: {} },
   };
 }
 let state = defaultState();
@@ -125,28 +125,43 @@ async function loadState() {
   state.ws3 = Object.assign({}, base.ws3, state.ws3 || {});
   state.ws3.config = Object.assign({}, base.ws3.config, state.ws3.config || {});
   delete state.ws3.config.equipment;
+  delete state.ws3.config.weekdays;
   const GOAL_MAP = { '增肌': '塑形增肌', '减脂': '减脂塑形', '塑形': '减脂塑形', '保持体能': '保持体能' };
   if (!GOALS.includes(state.ws3.config.goal)) state.ws3.config.goal = GOAL_MAP[state.ws3.config.goal] || '减脂塑形';
+  if (!state.ws3.config.sessionsPerWeek) state.ws3.config.sessionsPerWeek = state.ws3.config.daysPerWeek || 3;
+  delete state.ws3.config.daysPerWeek;
   state.ws1.config = Object.assign({}, state.ws1.config || {});
   state.ws1._ws = weekStart(todayISO());   // 每次进入都先看本周，避免停在大片空白的旧周
-  // 迁移旧的“记录型”数据 → 轻量打卡
+
+  // ---- 迁移各类旧打卡数据 → 主动式打卡（带 sessionKey）----
   if (!state.ws3.checkins) state.ws3.checkins = {};
-  if (!state.ws3.lightDays) state.ws3.lightDays = {};
+  if (state.ws3.lightDays && Object.keys(state.ws3.lightDays).length) {
+    for (const d of Object.keys(state.ws3.lightDays)) {
+      if (!state.ws3.checkins[d]) state.ws3.checkins[d] = { done: true, at: Date.now(), sessionKey: 'light', sessionTitle: '轻量日 · 低冲击有氧 + 拉伸', note: '' };
+    }
+    state.ws3.lightDays = {};
+  }
   const legacy = state.ws3.records || {};
   if (Object.keys(legacy).length && !Object.keys(state.ws3.checkins).length) {
-    for (const [d, r] of Object.entries(legacy)) state.ws3.checkins[d] = { done: true, at: r.at || Date.now(), note: r.note || '', deficit: (r.deficit != null ? r.deficit : null) };
+    for (const [d, r] of Object.entries(legacy)) state.ws3.checkins[d] = { done: true, at: r.at || Date.now(), sessionKey: 'free', sessionTitle: '自主训练', note: r.note || '' };
   }
-  // 首次进入：生成默认训练计划
-  if (!state.ws3.plan) state.ws3.plan = buildWeekPlan(state.ws3.config);
-  else if (!state.ws3.plan.startDate) state.ws3.plan.startDate = todayISO();
-  // 旧版计划（健身房版无 how / 居家初版无热身）自动重建为当前版本
+  for (const c of Object.values(state.ws3.checkins)) {
+    if (c && !c.sessionKey) { c.sessionKey = 'free'; c.sessionTitle = c.sessionTitle || '自主训练'; }
+  }
+
+  // ---- 计划：旧版按周几排的自动迁移为「每周 N 套」----
   let ws3Migrated = false;
-  const sampleDay = state.ws3.plan && state.ws3.plan.week && Object.values(state.ws3.plan.week).find((w) => !w.rest);
-  const needRebuild = sampleDay && sampleDay.exercises && sampleDay.exercises.length
-    && (sampleDay.exercises[0].how === undefined || !sampleDay.exercises.some((e) => e.key === 'warmup'));
-  if (needRebuild) {
-    state.ws3.plan = buildWeekPlan(Object.assign({}, state.ws3.config, { startDate: state.ws3.plan.startDate }));
-    ws3Migrated = true;
+  if (!state.ws3.plan) {
+    state.ws3.plan = buildPlan(state.ws3.config);
+  } else {
+    if (!state.ws3.plan.startDate) state.ws3.plan.startDate = todayISO();
+    if (!Array.isArray(state.ws3.plan.sessions)) {
+      state.ws3.plan = buildPlan(Object.assign({}, state.ws3.config, {
+        startDate: state.ws3.plan.startDate,
+        sessionsPerWeek: state.ws3.plan.daysPerWeek || state.ws3.config.sessionsPerWeek,
+      }));
+      ws3Migrated = true;
+    }
   }
   setConn(serverOK);
   // 首次：若服务端无资讯源，用内置默认；若含有已失效的旧源，则替换为新的默认源
@@ -1198,21 +1213,24 @@ function exScheme(key, goal) {
 }
 function pastDate(d) { return d < todayISO(); }
 
-function buildWeekPlan(cfg) {
-  const n = clamp(cfg.daysPerWeek || 3, 2, 5);
+function buildPlan(cfg) {
+  const n = clamp(cfg.sessionsPerWeek || cfg.daysPerWeek || 3, 2, 5);
   const keys = SPLIT_BY_DAYS[n] || SPLIT_BY_DAYS[3];
-  const wds = (Array.isArray(cfg.weekdays) && cfg.weekdays.length === keys.length) ? cfg.weekdays.slice() : (AUTO_WD[n] || AUTO_WD[3]);
-  const week = {};
-  for (let wd = 0; wd < 7; wd++) week[wd] = { wd, rest: true, title: '休息 / 主动恢复', exercises: [] };
-  keys.forEach((sk, i) => {
-    const wd = wds[i];
+  const sessions = keys.map((sk) => {
     const sp = SPLITS[sk] || SPLITS.full_a;
-    week[wd] = {
-      wd, rest: false, key: sk, title: sp.title, minutes: cfg.minutes || 40,
+    return {
+      key: sk, title: sp.title, minutes: cfg.minutes || 40,
       exercises: sp.keys.map((k) => ({ key: k, name: EXLIB[k].name, muscle: EXLIB[k].muscle, scheme: exScheme(k, cfg.goal), how: EXLIB[k].how, kind: EXLIB[k].kind })),
     };
   });
-  return { goal: cfg.goal || '减脂塑形', minutes: cfg.minutes || 40, daysPerWeek: keys.length, startDate: cfg.startDate || todayISO(), week, builtAt: Date.now() };
+  return { goal: cfg.goal || '减脂塑形', minutes: cfg.minutes || 40, sessionsPerWeek: n, startDate: cfg.startDate || todayISO(), sessions, builtAt: Date.now() };
+}
+function lightSession() {
+  const goal = ws3Plan() ? ws3Plan().goal : '减脂塑形';
+  return {
+    key: 'light', title: '轻量日 · 低冲击有氧 + 拉伸', minutes: 20,
+    exercises: SPLITS.cardio_core.keys.map((k) => ({ key: k, name: EXLIB[k].name, muscle: EXLIB[k].muscle, scheme: exScheme(k, goal), how: EXLIB[k].how, kind: EXLIB[k].kind })),
+  };
 }
 
 /* ---------- 餐饮推荐（只做早 / 晚 · 减脂 + 消炎 · 备菜连续、品类精简） ---------- */
@@ -1324,39 +1342,26 @@ function renderMeals() {
 }
 function ws3Cfg() { return state.ws3.config || {}; }
 function ws3Plan() { return state.ws3.plan || null; }
+function ws3Sessions() { const p = ws3Plan(); return (p && p.sessions) || []; }
+function sessionByKey(key) { return key === 'light' ? lightSession() : (ws3Sessions().find((s) => s.key === key) || null); }
 function planStart() { const p = ws3Plan(); return p && p.startDate ? p.startDate : null; }
-function dayPlan(dateStr) { const p = ws3Plan(); return p ? p.week[d2(dateStr).getDay()] : null; }
 function ws3Check(dateStr) { return (state.ws3.checkins || {})[dateStr] || null; }
 function ws3Done(dateStr) { return !!ws3Check(dateStr); }
-function ws3Streak() {
-  let s = 0, d = todayISO(), guard = 0;
-  while (guard++ < 500) {
-    const pl = dayPlan(d);
-    if (ws3Done(d)) { s++; d = addDays(d, -1); }
-    else if (pl && pl.rest) { d = addDays(d, -1); }   // 休息日不打断连续
-    else break;
-  }
-  return s;
-}
 function weekDates(dateStr) { const s = weekStart(dateStr); return [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(s, i)); }
 function ws3WeekStat(dateStr) {
   const ds = weekDates(dateStr);
-  const s = planStart();
-  const planned = ds.filter((d) => { const p = dayPlan(d); return p && !p.rest && (!s || d >= s); });
-  return { done: planned.filter((d) => ws3Done(d)).length, planned: planned.length, dates: ds };
+  const target = ws3Plan() ? ws3Plan().sessionsPerWeek : 0;
+  return { done: ds.filter((d) => ws3Done(d)).length, target, dates: ds };
 }
 function ws3MonthStat(ym) {
-  let planned = 0, done = 0, c = 0;
+  let done = 0, light = 0;
   const [y, m] = ym.split('-').map(Number);
   const last = new Date(y, m, 0).getDate();
-  const s = planStart();
   for (let i = 1; i <= last; i++) {
-    const d = `${ym}-${pad(i)}`;
-    const p = dayPlan(d);
-    if (p && !p.rest && (!s || d >= s)) { planned++; if (ws3Done(d)) done++; }
-    if (ws3Done(d)) c++;
+    const c = ws3Check(`${ym}-${pad(i)}`);
+    if (c) { done++; if (c.sessionKey === 'light') light++; }
   }
-  return { planned, done, checkins: c };
+  return { done, light };
 }
 function monthCal(ym) {
   const [y, m] = ym.split('-').map(Number);
@@ -1371,20 +1376,18 @@ function monthCal(ym) {
 function calCell(d) {
   if (!d) return '<span class="cal-cell blank"></span>';
   const t = todayISO();
-  const pl = dayPlan(d);
-  const done = ws3Done(d);
-  const light = !!(state.ws3.lightDays || {})[d];
+  const c = ws3Check(d);
   const s = planStart();
-  const isRest = !pl || pl.rest;
   let cls = 'cal-cell', mark = '';
-  if (done) { cls += ' done'; mark = '✓'; }
-  else if (light) { cls += ' light'; mark = '🌸'; }
-  else if (s && d < s) { cls += ' pre'; }
-  else if (isRest) { cls += ' rest'; mark = '·'; }
-  else if (d < t) { cls += ' miss'; mark = '✗'; }
+  if (c) {
+    if (c.sessionKey === 'light') { cls += ' light'; mark = '🌸'; }
+    else { cls += ' done'; mark = '✓'; }
+  } else if (s && d < s) { cls += ' pre'; }
   else if (d === t) { cls += ' today'; }
-  else { cls += ' upcoming'; }
-  return `<button class="${cls}" data-action="ws3-day" data-date="${d}" title="${d}${pl ? ' · ' + pl.title : ''}${done ? ' · 已完成' : ''}${light ? ' · 轻量日' : ''}">
+  else if (d > t) { cls += ' upcoming'; }
+  else { cls += ' idle'; }
+  const title = `${d}${c ? ' · ' + (c.sessionTitle || '已打卡') : ''}`;
+  return `<button class="${cls}" data-action="ws3-day" data-date="${d}" title="${title}">
     <span class="d">${Number(d.slice(8))}</span><span class="m">${mark}</span></button>`;
 }
 function exRow(e, i, date) {
@@ -1401,56 +1404,48 @@ function exRow(e, i, date) {
 function viewWS3() {
   const t = todayISO();
   const plan = ws3Plan();
-  const todayP = dayPlan(t);
-  const doneToday = ws3Done(t);
+  const sessions = ws3Sessions();
+  const today = ws3Check(t);
   const wk = ws3WeekStat(t);
   const ym = state.ws3._cal || monthOf(t);
   const mstat = ws3MonthStat(ym);
   const total = Object.keys(state.ws3.checkins || {}).length;
   const stg = weekStage(t);
-  const streak = ws3Streak();
-  const isLight = !!(state.ws3.lightDays || {})[t];
-  const goalNow = plan ? plan.goal : '减脂塑形';
-  const lightEx = SPLITS.cardio_core.keys.map((k) => ({ key: k, name: EXLIB[k].name, muscle: EXLIB[k].muscle, scheme: exScheme(k, goalNow), how: EXLIB[k].how, kind: EXLIB[k].kind }));
-  const wkPct = plan && plan.daysPerWeek ? Math.min(100, Math.round((wk.done / plan.daysPerWeek) * 100)) : 0;
+  const wkPct = wk.target ? Math.min(100, Math.round((wk.done / wk.target) * 100)) : 0;
 
   let todayCard;
   if (!plan) {
-    todayCard = '<div class="empty"><span class="big">💪</span>还没有训练计划，点右上角「调整计划」生成一份。</div>';
-  } else if (isLight) {
+    todayCard = '<div class="empty"><span class="big">💪</span>还没有训练计划，点右上角「调整计划」生成一套。</div>';
+  } else if (today) {
+    const s = sessionByKey(today.sessionKey);
     todayCard = `<div class="today-head">
-        <div class="today-title"><span class="today-emoji">🌸</span><b>轻量日 · 低冲击有氧 + 拉伸</b><span class="badge">强度减半</span></div>
-        <button class="btn xs ghost" data-action="ws3-light-toggle" data-date="${t}">取消轻量日</button>
+        <div class="today-title"><span class="today-emoji">✅</span><b>今日已完成</b><span class="badge ok">${h(today.sessionTitle || (s ? s.title : '自主训练'))}</span></div>
+        <button class="btn xs ghost" data-action="ws3-undo" data-date="${t}">撤销</button>
       </div>
-      <div class="ex-list">${lightEx.map((e, i) => exRow(e, i, t)).join('')}</div>`;
-  } else if (todayP.rest) {
-    todayCard = `<div class="today-rest">
-        <div class="rest-emoji">🛌</div>
-        <b>今天是休息日</b>
-        <p class="tiny muted">主动恢复：散步、拉伸、保证睡眠。休息日不打断连续打卡。</p>
-        <div class="row" style="justify-content:center">
-          <button class="btn sm" data-action="ws3-check" data-date="${t}">我还想练一下 / 手动打卡</button>
-          <button class="btn sm ghost" data-action="ws3-light-toggle" data-date="${t}">标记为轻量日</button>
-        </div>
-      </div>`;
+      ${today.note ? `<div class="tiny muted" style="margin-bottom:8px">📝 ${h(today.note)}</div>` : ''}
+      <div class="ex-list">${(s ? s.exercises : []).map((e, i) => exRow(e, i, t)).join('')}</div>`;
   } else {
     todayCard = `<div class="today-head">
-        <div class="today-title"><span class="today-emoji">🔥</span><b>${h(todayP.title)}</b><span class="badge">约 ${todayP.minutes} 分钟</span></div>
-        <button class="btn xs ghost" data-action="ws3-light-toggle" data-date="${t}">标记轻量日</button>
+        <div class="today-title"><span class="today-emoji">🔥</span><b>今天练哪套？</b><span class="badge">本周 ${wk.done}/${wk.target}</span></div>
+        <button class="btn xs ghost" data-action="ws3-light" data-date="${t}">🌸 今天轻量</button>
       </div>
-      <div class="today-note tiny muted">📈 本周节奏：${h(stg.note)}</div>
-      <div class="ex-list">${todayP.exercises.map((e, i) => exRow(e, i, t)).join('')}</div>`;
+      <div class="tiny muted" style="margin-bottom:10px">选一套 → 看动作 → 练完点「完成打卡」。也可以直接点日历补记。</div>
+      <div class="session-grid">
+        ${sessions.map((s) => `<button class="session-card" data-action="ws3-session" data-key="${s.key}" data-date="${t}">
+          <b>${h(s.title)}</b>
+          <span class="tiny muted">${s.exercises.length} 个动作 · 约 ${s.minutes} 分钟</span>
+          <span class="tiny">${s.exercises.slice(1, 4).map((e) => h(e.name)).join(' · ')}…</span>
+        </button>`).join('')}
+      </div>`;
   }
 
   return `
   <div class="page-head">
     <div><div class="eyebrow">工作台 3</div><h1>健康猿</h1>
-      <p>${plan ? `目标「${h(plan.goal)}」 · 每周 ${plan.daysPerWeek} 练 · 每次约 ${plan.minutes} 分钟 · 居家器械` : '先设置目标，生成你的专属训练计划'}</p></div>
+      <p>${plan ? `目标「${h(plan.goal)}」 · 每周 ${plan.sessionsPerWeek} 次 · 每次约 ${plan.minutes} 分钟 · 不限周几` : '先设置目标，生成每周训练建议'}</p></div>
     <div class="actions">
       <button class="btn" data-action="ws3-config">⚙️ 调整计划</button>
-      ${doneToday
-        ? `<button class="btn" data-action="ws3-undo" data-date="${t}">↩️ 撤销今日打卡</button>`
-        : `<button class="btn primary ok" data-action="ws3-check" data-date="${t}">✅ 完成今日训练</button>`}
+      <button class="btn primary ok" data-action="ws3-check" data-date="${t}">✅ 打卡</button>
     </div>
   </div>
 
@@ -1459,14 +1454,14 @@ function viewWS3() {
       <div class="ring" style="--p:${wkPct};--c:var(--ws3)"><b>${wkPct}%</b></div>
       <div>
         <b>本周完成</b>
-        <div class="tiny muted">${wk.done}/${plan ? plan.daysPerWeek : 0} 次 · 第 ${stg.cycleWeek} 周 ${h(stg.name)}</div>
+        <div class="tiny muted">${wk.done}/${wk.target} 次 · 第 ${stg.cycleWeek} 周 ${h(stg.name)}</div>
       </div>
     </div>
     <div class="ws3-metrics">
-      <div class="metric"><span class="m-v">${streak}<small>天</small></span><span class="m-k">连续打卡</span></div>
-      <div class="metric"><span class="m-v">${mstat.done}<small>/${mstat.planned}</small></span><span class="m-k">本月完成</span></div>
-      <div class="metric"><span class="m-v">${total}<small>次</small></span><span class="m-k">累计打卡</span></div>
-      <div class="metric"><span class="m-v">${plan ? plan.daysPerWeek : 0}<small>练/周</small></span><span class="m-k">当前频率</span></div>
+      <div class="metric"><span class="m-v">${wk.done}<small>/${wk.target}</small></span><span class="m-k">本周</span></div>
+      <div class="metric"><span class="m-v">${mstat.done}<small>次</small></span><span class="m-k">本月</span></div>
+      <div class="metric"><span class="m-v">${total}<small>次</small></span><span class="m-k">累计</span></div>
+      <div class="metric"><span class="m-v">${plan ? plan.sessionsPerWeek : 0}<small>次/周</small></span><span class="m-k">当前频率</span></div>
     </div>
   </div>
 
@@ -1475,34 +1470,27 @@ function viewWS3() {
       <section class="panel panel-hero">
         <div class="panel-head">
           <h2>今日训练</h2>
-          <div class="row">
-            <span class="badge brand">第 ${stg.cycleWeek} 周 · ${h(stg.name)}</span>
-            <span class="badge ${doneToday ? 'ok' : ''}">${doneToday ? '已完成' : '待完成'}</span>
-          </div>
+          <span class="badge brand">第 ${stg.cycleWeek} 周 · ${h(stg.name)}</span>
         </div>
         ${todayCard}
       </section>
 
       <section class="panel">
-        <div class="panel-head"><h2>本周计划</h2><span class="tiny muted">点任意一天看动作 / 打卡 / 轻量日</span></div>
-        <div class="week-strip">
-          ${WD_ORDER.map((wd) => {
-            const d = wk.dates.find((x) => d2(x).getDay() === wd);
-            const p = plan ? plan.week[wd] : null;
-            const done = ws3Done(d);
-            const light = !!(state.ws3.lightDays || {})[d];
-            const isToday = d === t;
-            const s0 = planStart();
-            const missed = pastDate(d) && p && !p.rest && !done && !light && (!s0 || d >= s0);
-            const cls = ['ws-day', p && !p.rest ? 'train' : 'rest', done ? 'done' : '', isToday ? 'today' : '', light ? 'light' : '', missed ? 'miss' : ''].filter(Boolean).join(' ');
-            const st = done ? '✓ 已完成' : light ? '🌸 轻量' : missed ? '✗ 缺卡' : (p && !p.rest) ? '待练' : '恢复';
-            return `<button class="${cls}" data-action="ws3-day" data-date="${d}" title="${WD_NAME[wd]} · ${p ? h(p.title) : '休息'}">
-              <span class="wd">${WD_NAME[wd].replace('周', '')}</span>
-              <span class="t">${p && !p.rest ? h(p.title) : '休息'}</span>
-              <span class="s">${st}</span>
-            </button>`;
+        <div class="panel-head"><h2>本周建议</h2><span class="tiny muted">每周 ${plan ? plan.sessionsPerWeek : 0} 次 · 不限定周几，按状态安排</span></div>
+        <div class="suggest-list">
+          ${sessions.map((s, i) => `<div class="suggest-row">
+            <span class="sug-i">${i + 1}</span>
+            <span class="sug-t"><b>${h(s.title)}</b><span class="tiny muted"> · ${s.exercises.length} 个动作 · 约 ${s.minutes} 分钟</span></span>
+            <button class="btn xs" data-action="ws3-session" data-key="${s.key}" data-date="${t}">查看 / 打卡</button>
+          </div>`).join('')}
+        </div>
+        <div class="week-dots">
+          ${wk.dates.map((d) => {
+            const c = ws3Check(d);
+            return `<span class="wd-dot${c ? (c.sessionKey === 'light' ? ' light' : ' on') : ''}${d === t ? ' today' : ''}" title="${d}${c ? ' · ' + h(c.sessionTitle || '已打卡') : ''}">${WD[d2(d).getDay()].replace('周', '')}</span>`;
           }).join('')}
         </div>
+        <div class="bar ok" style="margin-top:10px"><span style="width:${wkPct}%"></span></div>
       </section>
     </div>
 
@@ -1517,7 +1505,7 @@ function viewWS3() {
         </div>
         <div class="cal-head">${['一', '二', '三', '四', '五', '六', '日'].map((x) => `<span>${x}</span>`).join('')}</div>
         <div class="cal-grid">${monthCal(ym).map(calCell).join('')}</div>
-        <div class="cal-legend tiny muted">✓ 完成　✗ 缺卡　🌸 轻量　· 休息</div>
+        <div class="cal-legend tiny muted">✓ 已打卡　🌸 轻量　点日期可补记</div>
       </section>
 
       <section class="panel">
@@ -1572,92 +1560,112 @@ function viewWS3() {
 function openWs3Config() {
   const cfg = ws3Cfg();
   const plan = ws3Plan();
-  const n = plan ? plan.daysPerWeek : (cfg.daysPerWeek || 3);
-  const wds = plan ? WD_ORDER.filter((w) => !plan.week[w].rest) : (cfg.weekdays || AUTO_WD[n] || AUTO_WD[3]);
-  state.ws3._wds = wds.slice();
+  const n = plan ? plan.sessionsPerWeek : (cfg.sessionsPerWeek || 3);
   openModal(`
-    <h3>⚙️ 健康猿 · 训练计划设置</h3>
-    <div class="modal-sub">选好目标与频率，生成一周训练计划</div>
+    <h3>⚙️ 健康猿 · 训练设置</h3>
+    <div class="modal-sub">只定「每周几次 + 每次多久」，不限定周几，按状态安排</div>
     <div class="grid g2">
       <div class="field"><label>训练目标</label><select id="g-goal">
         ${GOALS.map((g) => `<option ${g === (plan ? plan.goal : cfg.goal) ? 'selected' : ''}>${h(g)}</option>`).join('')}
       </select></div>
-      <div class="field"><label>每周训练次数</label><select id="g-days">
-        ${[2, 3, 4, 5].map((d) => `<option value="${d}" ${d === n ? 'selected' : ''}>${d} 天</option>`).join('')}
+      <div class="field"><label>每周建议次数</label><select id="g-days">
+        ${[2, 3, 4, 5].map((d) => `<option value="${d}" ${d === n ? 'selected' : ''}>${d} 次</option>`).join('')}
       </select></div>
       <div class="field"><label>单次时长（分钟）</label><input type="number" id="g-mins" min="20" max="150" step="5" value="${plan ? plan.minutes : (cfg.minutes || 40)}"></div>
     </div>
-    <div class="hint" style="margin:-4px 0 10px">居家器械：瑜伽垫 / 瑜伽球 / 瑜伽砖 / 哑铃（4–6kg）/ 弹力带 / 泡沫轴。计划全程为低冲击，不安排跑跳。</div>
-    <div class="field"><label>训练日（可多选，默认自动分配）</label>
-      <div class="row">
-        ${WD_ORDER.map((w) => `<button class="pill wd-pill ${wds.includes(w) ? 'active' : ''}" data-action="ws3-pick-wd" data-wd="${w}">${WD_NAME[w]}</button>`).join('')}
-      </div>
-      <span class="hint" id="wd-hint">已选 ${wds.length} 天（与「每周训练次数」保持一致）</span>
-    </div>
+    <div class="hint" style="margin:-4px 0 10px">居家器械：瑜伽垫 / 瑜伽球 / 瑜伽砖 / 哑铃（4–6kg）/ 弹力带 / 泡沫轴。全程低冲击，不安排跑跳。</div>
     <div class="modal-actions"><button class="btn ghost" data-action="close-modal">取消</button>
-      <button class="btn primary" data-action="ws3-gen">生成训练计划</button></div>`);
+      <button class="btn primary" data-action="ws3-gen">生成 / 更新建议</button></div>`);
 }
-function openWs3Day(date) {
-  const p = dayPlan(date);
-  const done = ws3Done(date);
-  const ck = ws3Check(date) || {};
-  const light = !!(state.ws3.lightDays || {})[date];
-  const stg = weekStage(date);
-  const goalNow = ws3Plan() ? ws3Plan().goal : '减脂塑形';
-  const lightEx = SPLITS.cardio_core.keys.map((k) => ({ key: k, name: EXLIB[k].name, muscle: EXLIB[k].muscle, scheme: exScheme(k, goalNow), how: EXLIB[k].how, kind: EXLIB[k].kind }));
-  const showEx = light ? lightEx : (p && p.exercises) || [];
+
+function openWs3Session(key, date) {
+  const d = date || todayISO();
+  const s = sessionByKey(key) || ws3Sessions()[0];
+  if (!s) return;
+  const ck = ws3Check(d) || {};
+  const isLight = s.key === 'light';
+  const stg = weekStage(d);
+  const already = ck.sessionKey === s.key;
   openModal(`
-    <h3>${WD_NAME[d2(date).getDay()]} · ${light ? '🌸 轻量日' : h(p ? p.title : '休息')}</h3>
-    <div class="modal-sub">${fmtLong(date)} · 第 ${stg.cycleWeek} 周 ${h(stg.name)}${light ? '' : (p && !p.rest ? ` · 约 ${p.minutes} 分钟` : '')}${done ? ' · 已打卡 ✓' : ''}</div>
-    ${light ? `<div class="row" style="margin-bottom:8px"><span class="badge">🌸 轻量日 · 强度减半</span><span class="tiny muted">低冲击有氧 + 放松，不练力量</span></div>` : (p && !p.rest ? `<div class="tiny muted" style="margin-bottom:8px">📈 ${h(stg.note)}</div>` : '')}
-    ${showEx.length ? `<div class="ex-list">${showEx.map((e, i) => exRow(e, i, date)).join('')}</div>`
-      : '<p class="tiny muted">今天是休息日，建议散步 / 拉伸 / 保证睡眠。</p>'}
+    <h3>${isLight ? '🌸 ' : ''}${h(s.title)}</h3>
+    <div class="modal-sub">${fmtLong(d)} · 第 ${stg.cycleWeek} 周 ${h(stg.name)} · ${s.exercises.length} 个动作 · 约 ${s.minutes} 分钟</div>
+    ${isLight ? '<div class="row" style="margin-bottom:8px"><span class="badge">强度减半</span><span class="tiny muted">低冲击有氧 + 放松，不练力量</span></div>' : `<div class="tiny muted" style="margin-bottom:8px">📈 ${h(stg.note)}</div>`}
+    <div class="ex-list">${s.exercises.map((e, i) => exRow(e, i, d)).join('')}</div>
     <hr class="hr">
     <div class="field"><label>备注（选填）</label><textarea id="d-note" placeholder="例如：状态不错，今天腿有点酸">${h(ck.note || '')}</textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" data-action="close-modal">关闭</button>
-      <button class="btn" data-action="ws3-light-toggle" data-date="${date}">${light ? '取消轻量日' : '🌸 设为轻量日'}</button>
-      ${done ? `<button class="btn danger" data-action="ws3-undo" data-date="${date}">撤销打卡</button>` : ''}
-      <button class="btn primary ok" data-action="ws3-save-day" data-date="${date}">${done ? '保存备注' : '完成打卡'}</button>
+      ${already ? `<button class="btn danger" data-action="ws3-undo" data-date="${d}">撤销打卡</button>` : ''}
+      <button class="btn primary ok" data-action="ws3-save-day" data-date="${d}" data-key="${s.key}">${already ? '保存备注' : '完成打卡'}</button>
     </div>`);
 }
-function ws3Toggle(date) {
-  state.ws3.checkins = state.ws3.checkins || {};
-  if (ws3Done(date)) delete state.ws3.checkins[date];
-  else state.ws3.checkins[date] = { done: true, at: Date.now(), note: '' };
-  save();
+
+function openWs3Day(date) {
+  const ck = ws3Check(date);
+  const stg = weekStage(date);
+  if (ck) {
+    const s = sessionByKey(ck.sessionKey);
+    openModal(`
+      <h3>${WD_NAME[d2(date).getDay()]} · 已打卡</h3>
+      <div class="modal-sub">${fmtLong(date)} · ${h(ck.sessionTitle || (s ? s.title : '自主训练'))}</div>
+      ${ck.note ? `<div class="tiny muted" style="margin-bottom:8px">📝 ${h(ck.note)}</div>` : ''}
+      ${s ? `<div class="ex-list">${s.exercises.map((e, i) => exRow(e, i, date)).join('')}</div>` : ''}
+      <hr class="hr">
+      <div class="field"><label>备注（选填）</label><textarea id="n-note">${h(ck.note || '')}</textarea></div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-action="close-modal">关闭</button>
+        <button class="btn" data-action="ws3-save-note" data-date="${date}">保存备注</button>
+        <button class="btn danger" data-action="ws3-undo" data-date="${date}">撤销打卡</button>
+      </div>`);
+    return;
+  }
+  openModal(`
+    <h3>${WD_NAME[d2(date).getDay()]} · 补记打卡</h3>
+    <div class="modal-sub">${fmtLong(date)} · 第 ${stg.cycleWeek} 周 ${h(stg.name)} · 选今天实际练的那套</div>
+    <div class="session-grid">
+      ${ws3Sessions().map((s) => `<button class="session-card" data-action="ws3-session" data-key="${s.key}" data-date="${date}">
+        <b>${h(s.title)}</b>
+        <span class="tiny muted">${s.exercises.length} 个动作 · 约 ${s.minutes} 分钟</span>
+        <span class="tiny">${s.exercises.slice(1, 4).map((e) => h(e.name)).join(' · ')}…</span>
+      </button>`).join('')}
+      <button class="session-card light" data-action="ws3-session" data-key="light" data-date="${date}">
+        <b>🌸 轻量日</b>
+        <span class="tiny muted">低冲击有氧 + 拉伸 · 约 20 分钟</span>
+        <span class="tiny">没时间 / 状态不佳时选这个</span>
+      </button>
+    </div>
+    <div class="modal-actions"><button class="btn ghost" data-action="close-modal">关闭</button></div>`);
 }
-function ws3SaveDay(date) {
-  const note = (document.getElementById('d-note') || {}).value || '';
+
+function ws3Checkin(date, key, note) {
+  const s = sessionByKey(key);
   state.ws3.checkins = state.ws3.checkins || {};
   const prev = state.ws3.checkins[date] || {};
-  state.ws3.checkins[date] = { done: true, at: prev.at || Date.now(), note };
+  state.ws3.checkins[date] = {
+    done: true,
+    at: prev.at || Date.now(),
+    sessionKey: key,
+    sessionTitle: s ? s.title : '自主训练',
+    note: note != null ? note : (prev.note || ''),
+  };
   save();
 }
-function openWs3Note(date) {
-  const ck = ws3Check(date) || {};
-  openModal(`
-    <h3>📝 补充记录（选填）</h3>
-    <div class="modal-sub">${fmtLong(date)} · 记录很轻量，只为留个印象</div>
-    <div class="field"><label>备注</label><textarea id="n-note" placeholder="今天的感受 / 训练内容">${h(ck.note || '')}</textarea></div>
-    <div class="modal-actions"><button class="btn ghost" data-action="close-modal">取消</button>
-      <button class="btn primary" data-action="ws3-save-note" data-date="${date}">保存</button></div>`);
+function ws3SaveDay(date, key) {
+  const note = (document.getElementById('d-note') || {}).value || '';
+  ws3Checkin(date, key || (ws3Check(date) || {}).sessionKey, note);
 }
 function saveWs3Plan() {
   const g = (id) => document.getElementById(id);
   const cfg = {
     goal: g('g-goal').value,
-    daysPerWeek: Number(g('g-days').value) || 3,
+    sessionsPerWeek: Number(g('g-days').value) || 3,
     minutes: clamp(Number(g('g-mins').value) || 40, 20, 180),
   };
-  let wds = (state.ws3._wds || []).slice();
-  if (wds.length !== cfg.daysPerWeek) wds = (AUTO_WD[cfg.daysPerWeek] || AUTO_WD[3]).slice();
-  cfg.weekdays = wds;
   cfg.startDate = (state.ws3.plan && state.ws3.plan.startDate) || todayISO();
   state.ws3.config = cfg;
-  state.ws3.plan = buildWeekPlan(cfg);
+  state.ws3.plan = buildPlan(cfg);
   save(); closeModal(); render();
-  toast('已生成训练计划：每周 ' + cfg.daysPerWeek + ' 练');
+  toast('已更新：每周建议 ' + cfg.sessionsPerWeek + ' 次');
 }
 
 /* =====================================================================
@@ -1667,18 +1675,17 @@ function viewHome() {
   const t = todayISO();
   const w1 = ws1Day(t); const s1 = ws1Stats();
   const today3 = ws3Check(t);
-  const plan3 = dayPlan(t);
-  const train3 = plan3 && !plan3.rest;
+  const wk3 = ws3WeekStat(t);
   const newsN = NEWS.items.filter((i) => Date.now() - i.ts <= 7 * 86400000).length;
   const name = state.profile.name ? h(state.profile.name) + '，' : '';
   const cards = [
     { route: '#/ws1', icon: '📘', color: 'var(--ws1)', bg: 'var(--brand-soft)', title: '信息系统高项', desc: '软考高级考纲 · 计划打卡 · 跳转公开课与刷题小程序', stat: w1.tasks.length ? `${w1.done.length}/${w1.tasks.length} 今日` : '尚未生成计划' },
     { route: '#/ws2', icon: '📡', color: 'var(--ws2)', bg: '#f1ebff', title: 'AIIA 求职雷达', desc: 'AI 应用岗方向筛选 · 一周新闻 · 自动延伸学习卡片', stat: NEWS.loaded ? `${newsN} 条一周内` : '点击进入并刷新' },
-    { route: '#/ws3', icon: '💪', color: 'var(--ws3)', bg: 'var(--ok-soft)', title: '健康猿', desc: '居家低冲击训练计划 · 打卡 · 餐饮推荐', stat: today3 ? '今日已打卡 ✓' : (train3 ? '今日：' + plan3.title : '今日休息') },
+    { route: '#/ws3', icon: '💪', color: 'var(--ws3)', bg: 'var(--ok-soft)', title: '健康猿', desc: '居家低冲击训练建议 · 主动打卡 · 餐饮推荐', stat: today3 ? '今日已打卡 ✓' : `本周 ${wk3.done}/${wk3.target} 次` },
   ];
   const todos = [];
   w1.tasks.filter((x) => !state.ws1.tasksDone[x.id]).slice(0, 4).forEach((x) => todos.push({ ws: '高项', text: x.type === 'content' ? `第${x.no}章 ${x.point}` : x.title, route: '#/ws1' }));
-  if (!today3) todos.push({ ws: '健康猿', text: train3 ? '训练：' + plan3.title : '主动恢复（散步 / 拉伸）', route: '#/ws3' });
+  if (!today3) todos.push({ ws: '健康猿', text: `训练打卡（本周 ${wk3.done}/${wk3.target} 次，任选一套）`, route: '#/ws3' });
   return `
   <div class="dash-hero section">
     <div class="glow"></div>
@@ -1714,7 +1721,7 @@ function viewHome() {
       <div class="kv"><span class="k">高项 · 计划完成度</span><b>${s1.pct}%（${s1.done}/${s1.total}）</b></div>
       <div class="kv"><span class="k">高项 · 距离考试</span><b>${s1.examIn == null ? '未设置' : s1.examIn + ' 天'}</b></div>
       <div class="kv"><span class="k">高项 · 连续打卡</span><b>${s1.streak} 天</b></div>
-      <div class="kv"><span class="k">健康猿 · 连续打卡</span><b>${ws3Streak()} 天</b></div>
+      <div class="kv"><span class="k">健康猿 · 本周完成</span><b>${wk3.done} / ${wk3.target} 次</b></div>
       <div class="kv"><span class="k">资讯 · 一周内</span><b>${newsN} 条</b></div>
       <div class="kv"><span class="k">数据存储</span><b>${serverOK ? '本地文件' : '浏览器缓存'}</b></div>
     </div>
@@ -1853,30 +1860,12 @@ const ACTIONS = {
   // WS3
   'ws3-config': openWs3Config,
   'ws3-gen': saveWs3Plan,
-  'ws3-pick-wd': (el) => {
-    const wd = Number(el.dataset.wd);
-    const set = new Set(state.ws3._wds || []);
-    if (set.has(wd)) set.delete(wd); else set.add(wd);
-    state.ws3._wds = WD_ORDER.filter((w) => set.has(w));
-    el.classList.toggle('active');
-    const hint = document.getElementById('wd-hint');
-    if (hint) hint.textContent = '已选 ' + state.ws3._wds.length + ' 天（与「每周训练次数」保持一致）';
-  },
-  'ws3-check': (el) => { ws3Toggle(el.dataset.date); render(); toast(ws3Done(el.dataset.date) ? '打卡成功 ✓' : '已取消打卡'); },
+  'ws3-check': (el) => openWs3Day(el.dataset.date || todayISO()),
   'ws3-undo': (el) => { state.ws3.checkins = state.ws3.checkins || {}; delete state.ws3.checkins[el.dataset.date]; save(); closeModal(); render(); toast('已撤销打卡'); },
   'ws3-day': (el) => openWs3Day(el.dataset.date),
-  'ws3-light-toggle': (el) => {
-    const d = el.dataset.date;
-    state.ws3.lightDays = state.ws3.lightDays || {};
-    if (state.ws3.lightDays[d]) delete state.ws3.lightDays[d]; else state.ws3.lightDays[d] = true;
-    save();
-    const inModal = !document.getElementById('modal').classList.contains('hidden');
-    render();
-    if (inModal) openWs3Day(d);
-    toast(state.ws3.lightDays[d] ? '已标记为轻量日 🌸' : '已取消轻量日');
-  },
-  'ws3-note': (el) => openWs3Note(el.dataset.date),
-  'ws3-save-day': (el) => { ws3SaveDay(el.dataset.date); closeModal(); render(); toast('打卡成功 ✓'); },
+  'ws3-session': (el) => openWs3Session(el.dataset.key, el.dataset.date),
+  'ws3-light': (el) => openWs3Session('light', el.dataset.date || todayISO()),
+  'ws3-save-day': (el) => { ws3SaveDay(el.dataset.date, el.dataset.key); closeModal(); render(); toast('打卡成功 ✓'); },
   'ws3-save-note': (el) => {
     const d = el.dataset.date;
     const note = (document.getElementById('n-note') || {}).value || '';

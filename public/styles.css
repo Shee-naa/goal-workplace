@@ -372,6 +372,29 @@ details.panel[open] > summary.panel-head h2::after { content: " ▴"; }
 .lib-txt { flex: 1; min-width: 120px; display: flex; flex-direction: column; }
 .lib-txt b { font-size: 13px; }
 
+/* ---------------- 工作台3 主动打卡 ---------------- */
+.session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.session-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 12px; background: #fff; cursor: pointer; transition: all .15s; }
+.session-card:hover { border-color: var(--ws3); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.session-card b { font-size: 13.5px; }
+.session-card .tiny { color: var(--ink-2); }
+.session-card.light { background: #fff5f8; border-color: #f7c6d6; }
+
+.suggest-list { display: flex; flex-direction: column; gap: 6px; }
+.suggest-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.sug-i { width: 20px; height: 20px; border-radius: 6px; background: var(--ok-soft); color: var(--ws3); display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: 0 0 20px; }
+.sug-t { flex: 1; min-width: 0; font-size: 13px; }
+.sug-t b { font-weight: 600; }
+@media (max-width: 640px) { .suggest-row { flex-wrap: wrap; } }
+
+.week-dots { display: flex; gap: 6px; margin-top: 12px; }
+.wd-dot { flex: 1; text-align: center; font-size: 11px; color: var(--ink-3); padding: 6px 0; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+.wd-dot.on { background: var(--ok-soft); border-color: #c3ecd6; color: var(--ok); font-weight: 700; }
+.wd-dot.light { background: #fff5f8; border-color: #f7c6d6; color: #e0507e; font-weight: 700; }
+.wd-dot.today { box-shadow: 0 0 0 2px var(--brand-soft); border-color: var(--brand); }
+.cal-cell.idle { color: var(--ink-3); }
+
 /* ---------------- 工作台1 一周一屏 ---------------- */
 .wk-bar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px; }
 .wk-list { gap: 16px; }
