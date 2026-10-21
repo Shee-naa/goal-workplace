@@ -148,6 +148,7 @@ async function loadState() {
   for (const c of Object.values(state.ws3.checkins)) {
     if (c && !c.sessionKey) { c.sessionKey = 'free'; c.sessionTitle = c.sessionTitle || '自主训练'; }
   }
+  if (!Array.isArray(state.ws3._ings)) state.ws3._ings = [];
 
   // ---- 计划：旧版按周几排的自动迁移为「每周 N 套」----
   let ws3Migrated = false;
@@ -1236,18 +1237,18 @@ function lightSession() {
 /* ---------- 餐饮推荐（只做早 / 晚 · 减脂 + 消炎 · 备菜连续、品类精简） ---------- */
 const MEALS = {
   breakfast: [
-    { t: '无糖酸奶 + 燕麦 40g + 蓝莓 + 水煮蛋 1 个', tag: '5 分钟' },
-    { t: '全麦面包 2 片 + 煎蛋 1 个 + 番茄 + 牛奶', tag: '8 分钟' },
-    { t: '杂粮粥 + 卤蛋 1 个 + 凉拌菠菜', tag: '10 分钟' },
-    { t: '玉米半根 + 水煮蛋 2 个 + 无糖豆浆', tag: '8 分钟' },
-    { t: '隔夜燕麦杯（前一晚泡好）+ 香蕉 + 坚果', tag: '0 分钟' },
+    { t: '无糖酸奶 + 燕麦 40g + 蓝莓 + 水煮蛋 1 个', tag: '5 分钟', ing: ['酸奶', '燕麦', '蓝莓', '鸡蛋'] },
+    { t: '全麦面包 2 片 + 煎蛋 1 个 + 番茄 + 牛奶', tag: '8 分钟', ing: ['全麦面包', '鸡蛋', '番茄', '牛奶'] },
+    { t: '杂粮粥 + 卤蛋 1 个 + 凉拌菠菜', tag: '10 分钟', ing: ['杂粮饭', '鸡蛋', '菠菜'] },
+    { t: '玉米半根 + 水煮蛋 2 个 + 无糖豆浆', tag: '8 分钟', ing: ['玉米', '鸡蛋', '豆浆'] },
+    { t: '隔夜燕麦杯（前一晚泡好）+ 香蕉 + 坚果', tag: '0 分钟', ing: ['燕麦', '酸奶', '香蕉', '坚果'] },
   ],
   dinner: [
-    { t: '清蒸鲈鱼 + 西兰花 + 杂粮饭', tag: '消炎' },
-    { t: '番茄豆腐 + 蒜蓉菠菜 + 红薯', tag: '消炎' },
-    { t: '白灼虾 + 凉拌黄瓜 + 玉米', tag: '高蛋白' },
-    { t: '去皮鸡腿 + 彩椒西兰花 + 杂粮饭', tag: '减脂' },
-    { t: '菌菇豆腐汤 + 清炒时蔬 + 紫薯', tag: '清淡' },
+    { t: '清蒸鲈鱼 + 西兰花 + 杂粮饭', tag: '消炎', ing: ['鱼', '西兰花', '杂粮饭'] },
+    { t: '番茄豆腐 + 蒜蓉菠菜 + 红薯', tag: '消炎', ing: ['番茄', '豆腐', '菠菜', '红薯'] },
+    { t: '白灼虾 + 凉拌黄瓜 + 玉米', tag: '高蛋白', ing: ['虾', '黄瓜', '玉米'] },
+    { t: '去皮鸡腿 + 彩椒西兰花 + 杂粮饭', tag: '减脂', ing: ['鸡肉', '彩椒', '西兰花', '杂粮饭'] },
+    { t: '菌菇豆腐汤 + 清炒时蔬 + 紫薯', tag: '清淡', ing: ['菌菇', '豆腐', '时蔬', '紫薯'] },
   ],
 };
 const MEAL_STAPLES = ['鸡蛋', '无糖酸奶 / 牛奶', '燕麦', '全麦面包', '玉米 / 红薯 / 紫薯', '杂粮饭', '鸡胸 / 鸡腿', '鲈鱼 / 虾', '豆腐', '西兰花 / 菠菜 / 彩椒', '番茄 / 黄瓜', '蓝莓 / 香蕉', '坚果', '橄榄油 / 姜蒜'];
@@ -1267,6 +1268,78 @@ const PREP_TIPS = [
   '黄瓜、番茄洗净即食；蓝莓冷冻保存',
   '常备：无糖酸奶、燕麦、坚果、橄榄油',
 ];
+
+/* ---------- 「我买的菜」→ 菜品推荐 ---------- */
+const ING_ALIAS = {
+  '西红柿': '番茄', '圣女果': '番茄',
+  '鸡胸肉': '鸡肉', '鸡胸': '鸡肉', '鸡腿肉': '鸡肉', '鸡腿': '鸡肉', '鸡肉': '鸡肉',
+  '西蓝花': '西兰花', '花椰菜': '西兰花',
+  '虾仁': '虾', '大虾': '虾', '基围虾': '虾', '鲜虾': '虾',
+  '地瓜': '红薯', '番薯': '红薯',
+  '蛋': '鸡蛋', '水煮蛋': '鸡蛋', '土鸡蛋': '鸡蛋',
+  '生菜': '时蔬', '油麦菜': '时蔬', '小白菜': '时蔬', '青菜': '时蔬', '蔬菜': '时蔬', '绿叶菜': '时蔬', '时蔬': '时蔬',
+  '燕麦片': '燕麦', '麦片': '燕麦',
+  '面包': '全麦面包', '全麦吐司': '全麦面包', '吐司': '全麦面包',
+  '糙米饭': '杂粮饭', '米饭': '杂粮饭', '糙米': '杂粮饭', '杂粮': '杂粮饭',
+  '嫩豆腐': '豆腐', '老豆腐': '豆腐',
+  '蘑菇': '菌菇', '香菇': '菌菇', '金针菇': '菌菇', '杏鲍菇': '菌菇', '菌菇': '菌菇',
+  '鱼': '鱼', '鲈鱼': '鱼', '三文鱼': '鱼', '鳕鱼': '鱼', '鱼片': '鱼',
+  '青瓜': '黄瓜', '甜椒': '彩椒', '灯笼椒': '彩椒',
+  '酸奶': '酸奶', '牛奶': '牛奶', '豆浆': '豆浆', '豆奶': '豆浆',
+};
+const QUICK_INGS = ['鸡蛋', '鸡肉', '西兰花', '番茄', '豆腐', '虾', '菠菜', '杂粮饭'];
+function parseIngs(text) {
+  return String(text || '')
+    .split(/[\s,，、;；/]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => ING_ALIAS[s] || s)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, 20);
+}
+function recommendMeals(ings) {
+  const pool = [
+    ...MEALS.breakfast.map((m) => ({ ...m, slot: '早餐' })),
+    ...MEALS.dinner.map((m) => ({ ...m, slot: '晚餐' })),
+  ];
+  return pool
+    .map((m) => {
+      const need = m.ing || [];
+      const hit = need.filter((i) => ings.includes(i));
+      const miss = need.filter((i) => !ings.includes(i));
+      return { ...m, hit, miss, score: hit.length / need.length + hit.length * 0.2 };
+    })
+    .filter((m) => m.hit.length > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+function renderIngredientBox() {
+  const ings = state.ws3._ings || [];
+  const recs = ings.length ? recommendMeals(ings) : [];
+  return `<div class="ing-box">
+    <div class="spread">
+      <b class="tiny">🧺 我买的菜 → 能做什么</b>
+      ${ings.length ? '<button class="btn xs ghost" data-action="ws3-ing-clear">清空</button>' : ''}
+    </div>
+    <div class="row" style="margin-top:6px;flex-wrap:nowrap">
+      <input type="text" id="ing-input" placeholder="输入菜名，如 鸡胸 西兰花 番茄" style="flex:1;min-width:0">
+      <button class="btn xs primary" data-action="ws3-ing-add">推荐</button>
+    </div>
+    ${ings.length
+      ? `<div class="row" style="margin-top:8px">${ings.map((i) => `<span class="ing-tag">${h(i)}<i data-action="ws3-ing-del" data-name="${h(i)}">×</i></span>`).join('')}</div>`
+      : `<div class="row" style="margin-top:8px">${QUICK_INGS.map((q) => `<button class="ing-quick" data-action="ws3-ing-quick" data-name="${h(q)}">+ ${h(q)}</button>`).join('')}</div>`}
+    ${ings.length
+      ? (recs.length
+        ? `<div class="rec-list">${recs.map((r) => `<div class="rec-row">
+            <span class="rec-slot">${r.slot}</span>
+            <span class="rec-t"><b>${h(r.t)}</b>
+              <span class="tiny muted">用到：${r.hit.map((x) => h(x)).join('、')}${r.miss.length ? ` · 还差：${r.miss.slice(0, 2).map((x) => h(x)).join('、')}` : ''}</span>
+            </span>
+          </div>`).join('')}</div>`
+        : '<div class="tiny muted" style="margin-top:8px">这些食材暂时没匹配到菜谱，可补充常见主料（鸡蛋 / 鸡肉 / 豆腐 / 杂粮饭），或点上方「换一换」看今日推荐。</div>')
+      : ''}
+  </div>`;
+}
 
 /* ---------- 训练须知（居家 · 低冲击 · 减脂塑形） ---------- */
 const TRAIN_TIPS = [
@@ -1513,6 +1586,7 @@ function viewWS3() {
           <button class="btn xs" data-action="meal-shuffle">🔄 换一换</button>
         </div>
         ${renderMeals()}
+        ${renderIngredientBox()}
         <details class="mini-det">
           <summary>饮食原则（减脂 + 消炎）</summary>
           <div class="row" style="margin-top:8px">${MEAL_TIPS.map((x) => `<span class="badge">${h(x)}</span>`).join('')}</div>
@@ -1874,6 +1948,25 @@ const ACTIONS = {
     save(); closeModal(); render(); toast('已保存');
   },
   'meal-shuffle': () => { state.ws3._meal = (state.ws3._meal || 0) + 1; save(); render(); toast('换一批推荐 🍽️'); },
+  'ws3-ing-add': () => {
+    const el = document.getElementById('ing-input');
+    const ings = parseIngs(el ? el.value : '');
+    if (!ings.length) return toast('先输入菜名，比如「鸡胸 西兰花」');
+    state.ws3._ings = Array.from(new Set([...(state.ws3._ings || []), ...ings])).slice(0, 20);
+    save(); render();
+    const n = recommendMeals(state.ws3._ings).length;
+    toast(n ? `按你的食材找到 ${n} 个做法 🍳` : '已记录，暂时没匹配到菜谱');
+  },
+  'ws3-ing-quick': (el) => {
+    const name = el.dataset.name;
+    state.ws3._ings = Array.from(new Set([...(state.ws3._ings || []), name])).slice(0, 20);
+    save(); render();
+  },
+  'ws3-ing-del': (el) => {
+    state.ws3._ings = (state.ws3._ings || []).filter((x) => x !== el.dataset.name);
+    save(); render();
+  },
+  'ws3-ing-clear': () => { state.ws3._ings = []; save(); render(); },
   'ws3-cal': (el) => {
     const dir = Number(el.dataset.dir);
     const ym = state.ws3._cal || monthOf(todayISO());
@@ -1919,7 +2012,14 @@ document.addEventListener('change', (e) => {
     fr.readAsText(el.files[0]);
   }
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Enter' && e.target && e.target.id === 'ing-input') {
+    e.preventDefault();
+    const fn = ACTIONS['ws3-ing-add'];
+    if (fn) fn({ dataset: {} });
+  }
+});
 
 /* ---------------- modal ---------------- */
 function openModal(html) { modalBox.innerHTML = html; modalEl.classList.remove('hidden'); }

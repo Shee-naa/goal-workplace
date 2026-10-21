@@ -395,6 +395,25 @@ details.panel[open] > summary.panel-head h2::after { content: " ▴"; }
 .wd-dot.today { box-shadow: 0 0 0 2px var(--brand-soft); border-color: var(--brand); }
 .cal-cell.idle { color: var(--ink-3); }
 
+/* 我买的菜 → 推荐 */
+.ing-box { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.ing-box input { padding: 6px 9px; font-size: 12.5px; }
+.ing-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 9px; border-radius: 999px;
+  background: var(--ok-soft); color: #0d7a48; border: 1px solid #c3ecd6; font-size: 12px; }
+.ing-tag i { font-style: normal; cursor: pointer; width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0,0,0,.06); font-size: 11px; line-height: 1; }
+.ing-tag i:hover { background: rgba(0,0,0,.14); }
+.ing-quick { border: 1px dashed var(--line); background: #fff; color: var(--ink-2); border-radius: 999px; padding: 3px 9px;
+  font-size: 11.5px; cursor: pointer; }
+.ing-quick:hover { border-color: var(--ws3); color: var(--ws3); }
+.rec-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.rec-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--panel-2); }
+.rec-slot { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--ws3); background: var(--ok-soft);
+  border-radius: 999px; padding: 2px 7px; margin-top: 1px; }
+.rec-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rec-t b { font-size: 12.5px; }
+
 /* ---------------- 工作台1 一周一屏 ---------------- */
 .wk-bar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px; }
 .wk-list { gap: 16px; }
