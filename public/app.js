@@ -1125,6 +1125,10 @@ const EXLIB = {
   bird_dog:     { muscle: '核心/背', kind: 'c', name: '鸟狗式', how: '四点跪姿，对侧手脚伸展停 2 秒' },
   ball_roll:    { muscle: '腹',     kind: 'c', name: '瑜伽球卷腹', how: '腰贴球面，小幅度卷起' },
   russian:      { muscle: '侧腹',   kind: 'c', name: '俄罗斯转体', how: '徒手或持哑铃，控制幅度' },
+  // ---- 久坐 / 碎片（站着或坐着就能做）----
+  neck:         { muscle: '肩颈',   kind: 'r', name: '肩颈绕环', how: '耸肩 → 前后绕环各 10 次，动作放慢' },
+  hip:          { muscle: '髋',     kind: 'r', name: '站姿提膝 / 髋绕环', how: '扶墙，左右各 10 次' },
+  breath:       { muscle: '呼吸',   kind: 'r', name: '箱式呼吸', how: '吸 4 秒 - 停 4 秒 - 呼 4 秒 - 停 4 秒，做 5 轮' },
   // ---- 低冲击有氧 & 放松（一律不跳）----
   cardio_walk:  { muscle: '有氧',   kind: 'd', name: '原地快走 / 踏步', how: '30-40 分钟，微喘但能说话' },
   cardio_low:   { muscle: '有氧',   kind: 'd', name: '低冲击有氧组合', how: '踏步 + 侧点地 + 抬膝，双脚不跳' },
@@ -1137,7 +1141,7 @@ const EX_GROUPS = [
   { name: '下肢 / 臀（重点）', keys: ['squat_box', 'squat_sumo', 'squat_wall', 'lunge_back', 'lunge_side', 'glute_bridge', 'glute_ball', 'band_walk', 'calf'] },
   { name: '上肢（哑铃 / 弹力带）', keys: ['db_press', 'db_fly', 'db_shoulder', 'db_lateral', 'db_row', 'db_curl', 'db_tri', 'pu_incline', 'pu_knee', 'band_row', 'band_pull', 'band_face'] },
   { name: '核心', keys: ['plank', 'plank_side', 'dead_bug', 'bird_dog', 'ball_roll', 'russian'] },
-  { name: '有氧 · 热身 · 放松', keys: ['warmup', 'cardio_walk', 'cardio_low', 'ball_bounce', 'foam_roll', 'stretch'] },
+  { name: '有氧 · 热身 · 放松', keys: ['warmup', 'cardio_walk', 'cardio_low', 'ball_bounce', 'foam_roll', 'stretch', 'neck', 'hip', 'breath'] },
 ];
 const SPLITS = {
   lower_glute: { title: '下肢臀塑形', keys: ['warmup', 'squat_sumo', 'glute_bridge', 'lunge_back', 'band_walk', 'glute_ball', 'calf', 'stretch'] },
@@ -1154,6 +1158,21 @@ const SPLIT_BY_DAYS = {
   5: ['lower_glute', 'upper_back', 'arms_posture', 'cardio_core', 'full_b'],
 };
 const AUTO_WD = { 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 5, 6] };
+
+/* ---------- 最小可执行版本（不想练时的低门槛选项） ---------- */
+const MINI_SESSIONS = [
+  { key: 'mini5', title: '5 分钟起步', minutes: 5, tag: '站立 · 不出汗', keys: ['squat_wall', 'calf', 'band_row', 'stretch'] },
+  { key: 'mini10', title: '10 分钟站立', minutes: 10, tag: '站立 · 微汗', keys: ['squat_sumo', 'band_walk', 'pu_incline', 'calf', 'stretch'] },
+  { key: 'desk3', title: '久坐救急 3 分钟', minutes: 3, tag: '肩颈 · 髋', keys: ['neck', 'hip', 'breath'] },
+];
+const MICRO_HABITS = [
+  '等水开：靠墙静蹲 30 秒 × 2',
+  '刷手机时：站姿提踵 20 次',
+  '久坐 1 小时：肩颈绕环 10 次 + 站起走 1 分钟',
+  '看剧广告：弹力带划船 15 次',
+  '睡前：垫上拉伸 3 分钟',
+  '刷牙时：单腿站立 30 秒（练平衡）',
+];
 
 /* ---------- 4 周渐进编排：3 周进阶 + 1 周减载，循环 ---------- */
 const WK_STAGES = [
@@ -1416,7 +1435,19 @@ function renderMeals() {
 function ws3Cfg() { return state.ws3.config || {}; }
 function ws3Plan() { return state.ws3.plan || null; }
 function ws3Sessions() { const p = ws3Plan(); return (p && p.sessions) || []; }
-function sessionByKey(key) { return key === 'light' ? lightSession() : (ws3Sessions().find((s) => s.key === key) || null); }
+function sessionByKey(key) {
+  if (key === 'light') return lightSession();
+  return ws3Sessions().find((s) => s.key === key) || miniSession(key);
+}
+function miniSession(key) {
+  const def = MINI_SESSIONS.find((m) => m.key === key);
+  if (!def) return null;
+  const goal = ws3Plan() ? ws3Plan().goal : '减脂塑形';
+  return {
+    key: def.key, title: def.title, minutes: def.minutes, tag: def.tag,
+    exercises: def.keys.map((k) => ({ key: k, name: EXLIB[k].name, muscle: EXLIB[k].muscle, scheme: exScheme(k, goal), how: EXLIB[k].how, kind: EXLIB[k].kind })),
+  };
+}
 function planStart() { const p = ws3Plan(); return p && p.startDate ? p.startDate : null; }
 function ws3Check(dateStr) { return (state.ws3.checkins || {})[dateStr] || null; }
 function ws3Done(dateStr) { return !!ws3Check(dateStr); }
@@ -1508,6 +1539,12 @@ function viewWS3() {
           <b>${h(s.title)}</b>
           <span class="tiny muted">${s.exercises.length} 个动作 · 约 ${s.minutes} 分钟</span>
           <span class="tiny">${s.exercises.slice(1, 4).map((e) => h(e.name)).join(' · ')}…</span>
+        </button>`).join('')}
+      </div>
+      <div class="mini-row">
+        <span class="tiny muted">没状态？先做最小版（做完也算打卡）：</span>
+        ${MINI_SESSIONS.map((m) => `<button class="mini-btn" data-action="ws3-session" data-key="${m.key}" data-date="${t}">
+          <b>⚡ ${h(m.title)}</b><span>${m.minutes} 分钟 · ${h(m.tag)}</span>
         </button>`).join('')}
       </div>`;
   }
@@ -1603,6 +1640,10 @@ function viewWS3() {
         <div class="stack">${TRAIN_TIPS.map((x) => `<div class="entry-row"><span class="tiny">· ${h(x)}</span></div>`).join('')}</div>
         <hr class="hr">
         <div class="tiny" style="color:var(--ink-2)">💡 ${h(LIGHT_TIP)}</div>
+        <details class="mini-det">
+          <summary>碎片动作（等水开 / 刷手机时做）</summary>
+          <div class="stack" style="margin-top:8px">${MICRO_HABITS.map((x) => `<div class="tiny">· ${h(x)}</div>`).join('')}</div>
+        </details>
       </details>
     </div>
   </div>

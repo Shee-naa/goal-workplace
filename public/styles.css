@@ -414,6 +414,14 @@ details.panel[open] > summary.panel-head h2::after { content: " ▴"; }
 .rec-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .rec-t b { font-size: 12.5px; }
 
+/* 最小可执行版本 */
+.mini-row { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mini-btn { display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 7px 11px; border-radius: 10px;
+  border: 1px dashed #c3ecd6; background: var(--ok-soft); cursor: pointer; transition: all .15s; }
+.mini-btn:hover { border-style: solid; border-color: var(--ws3); transform: translateY(-1px); }
+.mini-btn b { font-size: 12.5px; color: #0d7a48; }
+.mini-btn span { font-size: 10.5px; color: var(--ink-3); }
+
 /* ---------------- 工作台1 一周一屏 ---------------- */
 .wk-bar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px; }
 .wk-list { gap: 16px; }
